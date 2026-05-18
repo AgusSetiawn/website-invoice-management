@@ -1,0 +1,133 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #4f46e5; /* Indigo 600 - Rich, Premium Indigo */
+  --color-brand-light: #818cf8; /* Indigo 400 */
+  --color-brand-dark: #4338ca; /* Indigo 700 */
+  --color-success: #059669; /* Emerald 600 - High Contrast Emerald */
+  --color-danger: #e11d48; /* Rose 600 - Highly Aesthetic Deep Rose */
+  --color-warning: #d97706; /* Amber 600 - Elegant Warm Amber */
+  --color-wa: #25d366; /* WhatsApp Green */
+
+  --font-sans: var(--font-jakarta), 'Inter', system-ui, sans-serif;
+
+  --animate-fade-in: fadeIn 0.3s ease-out forwards;
+  --animate-slide-up: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-pop: popIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@layer base {
+  body {
+    /* 60% Dominant: Harmonious and soft neutral pearl-gray backdrop to make cards blend beautifully */
+    @apply bg-[#f4f6f8] text-slate-800 font-sans antialiased min-h-screen;
+    background-image: 
+      radial-gradient(circle at 10% 10%, rgba(255, 255, 255, 0.8) 0%, transparent 40%),
+      radial-gradient(circle at 90% 90%, rgba(226, 232, 240, 0.4) 0%, transparent 40%);
+    background-attachment: fixed;
+  }
+  
+  /* Hide number input arrows */
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type=number] { -moz-appearance: textfield; }
+}
+
+@layer components {
+  /* Header Navbar shadow & elevation - Clean, solid outline */
+  .header-nav {
+    @apply bg-white/90 backdrop-blur-md border-b border-slate-200 sticky top-0 z-40 transition-all duration-300;
+    box-shadow: 0 4px 20px -5px rgba(79, 70, 229, 0.05);
+  }
+
+  /* Forms */
+  .inp-group {
+    @apply relative flex items-center;
+  }
+  .inp-icon {
+    @apply absolute left-4 text-slate-400 z-10;
+  }
+  .inp {
+    @apply w-full pl-12 pr-4 py-3.5 bg-white border border-slate-300 hover:border-brand/40 rounded-2xl text-slate-800 text-lg font-medium shadow-sm
+           focus:outline-none focus:border-brand focus:ring-4 focus:ring-brand/10 transition-all placeholder:text-slate-300;
+  }
+  .inp-table {
+    @apply w-full px-3 py-2 bg-transparent border-2 border-transparent rounded-xl text-slate-800 text-base font-semibold
+           focus:outline-none focus:border-brand/30 focus:bg-white transition-all placeholder:text-slate-300;
+  }
+  .lbl {
+    @apply block text-sm font-bold text-slate-500 mb-2;
+  }
+  
+  /* Cards - Pure visual harmony: firm borders and soft brand-tinted shadows (indigo) */
+  .card {
+    @apply bg-white rounded-3xl border border-slate-200 overflow-hidden transition-all duration-300;
+    box-shadow: 
+      0 10px 30px -10px rgba(79, 70, 229, 0.06), 
+      0 1px 3px rgba(0, 0, 0, 0.01),
+      0 0 0 1px rgba(79, 70, 229, 0.01);
+  }
+  .card-hover:hover {
+    @apply border-brand/30 translate-y-[-4px];
+    box-shadow: 
+      0 20px 40px -15px rgba(79, 70, 229, 0.12),
+      0 1px 5px rgba(79, 70, 229, 0.02),
+      0 0 0 1px rgba(79, 70, 229, 0.04);
+  }
+  
+  /* Buttons — base styles inlined to avoid chained @apply in Tailwind v4 */
+  .btn-base {
+    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg active:scale-[0.98] transition-all duration-200;
+  }
+  .btn-primary {
+    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg active:scale-[0.98] transition-all duration-200 text-white bg-brand shadow-lg hover:bg-brand-dark;
+    box-shadow: 0 4px 24px rgba(59,130,246,0.25);
+  }
+  .btn-success {
+    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg active:scale-[0.98] transition-all duration-200 text-white bg-success hover:bg-emerald-600;
+    box-shadow: 0 4px 24px rgba(16,185,129,0.25);
+  }
+  .btn-wa {
+    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg active:scale-[0.98] transition-all duration-200 text-white;
+    background: #25d366;
+    box-shadow: 0 4px 24px rgba(37,211,102,0.25);
+  }
+  .btn-wa:hover { background: #20bd5a; }
+  .btn-secondary {
+    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg active:scale-[0.98] transition-all duration-200 text-slate-700 bg-white border-2 border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-sm;
+  }
+  .icon-btn {
+    @apply w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-danger hover:bg-danger/10 transition-colors;
+  }
+
+  /* Table */
+  .th-cell {
+    @apply py-4 px-4 text-xs font-bold uppercase tracking-wider text-slate-400 border-b-2 border-slate-100;
+  }
+  .td-cell {
+    @apply py-2 px-2 border-b border-slate-50 transition-colors;
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes popIn {
+  0% { opacity: 0; transform: scale(0.95); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; border: 2px solid #f8fafc; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }

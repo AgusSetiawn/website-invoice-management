@@ -43,7 +43,7 @@ export default function Home() {
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [bon, setBon] = useState(0);
   const [cash, setCash] = useState(0);
-  const [items, setItems] = useState<Item[]>([{ id: Date.now(), name: "", qty: 1, price: 0 }]);
+  const [items, setItems] = useState<Item[]>([{ id: Date.now(), name: "", qty: 0, price: 0 }]);
   const [nextId, setNextId] = useState(2);
 
   const printRef = useRef<HTMLDivElement>(null);
@@ -68,7 +68,7 @@ export default function Home() {
 
   /* ─── Items CRUD ─── */
   const addItem = () => {
-    setItems(prev => [...prev, { id: nextId, name: "", qty: 1, price: 0 }]);
+    setItems(prev => [...prev, { id: nextId, name: "", qty: 0, price: 0 }]);
     setNextId(n => n + 1);
   };
   const updateItem = (id: number, field: keyof Item, val: string | number) => {
@@ -76,8 +76,8 @@ export default function Home() {
       if (i.id !== id) return i;
       let sanitizedVal = val;
       if (field === "qty") {
-        // Clamp Qty between 1 and 99.999
-        sanitizedVal = Math.min(99999, Math.max(1, Number(val) || 1));
+        // Clamp Qty between 0 and 99.999
+        sanitizedVal = Math.min(99999, Math.max(0, Number(val) || 0));
       } else if (field === "price") {
         // Clamp Price between 0 and 999.999.999, handling formatted string input safely
         const cleanPrice = String(val).replace(/\D/g, "");
@@ -95,7 +95,7 @@ export default function Home() {
   };
   const reset = () => {
     setCustomerName(""); setDate(new Date().toISOString().split("T")[0]); setBon(0); setCash(0);
-    setItems([{ id: Date.now(), name: "", qty: 1, price: 0 }]); setNextId(2);
+    setItems([{ id: Date.now(), name: "", qty: 0, price: 0 }]); setNextId(2);
   };
 
   /* ─── Export & Share ─── */

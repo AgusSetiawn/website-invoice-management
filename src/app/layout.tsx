@@ -11,6 +11,11 @@ const jakarta = Plus_Jakarta_Sans({
 export const metadata: Metadata = {
   title: "Nota Digital – Rumah Ayam",
   description: "Aplikasi Invoice & Nota Digital Rumah Ayam – Suplayer Ayam dan Bebek Fendi Broiler",
+  manifest: "/manifest.json",
+};
+
+export const viewport = {
+  themeColor: "#000000",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

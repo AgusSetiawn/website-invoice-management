@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Nota Digital</string>
+    <string name="title_activity_main">Nota Digital</string>
+    <string name="package_name">com.rumahayam.nota</string>
+    <string name="custom_url_scheme">com.rumahayam.nota</string>
+</resources>

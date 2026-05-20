@@ -36,8 +36,6 @@ const formatRpInput = (val: number): string => {
 /* ─── Main Page ─────────────────────────────────────────── */
 export default function Home() {
   const [mounted, setMounted] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
-  const [fadeOut, setFadeOut] = useState(false);
   const config = defaultConfig;
 
   // Form State
@@ -56,16 +54,6 @@ export default function Home() {
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch { /* ignore */ }
-
-    // Display splash for 2.2 seconds, then trigger fadeout animation
-    const timer = setTimeout(() => {
-      setFadeOut(true);
-      const removeTimer = setTimeout(() => {
-        setShowSplash(false);
-      }, 700); // match transition duration
-      return () => clearTimeout(removeTimer);
-    }, 2200);
-    return () => clearTimeout(timer);
   }, []);
 
   /* ─── Derived Math ─── */
@@ -203,52 +191,11 @@ export default function Home() {
     alert("Teks berhasil disalin!");
   };
 
+  if (!mounted) return null;
+
   return (
     <>
-      {showSplash && (
-        <div className={`fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-slate-950 transition-all duration-700 ease-in-out ${fadeOut ? 'opacity-0 scale-105 pointer-events-none' : 'opacity-100'}`}>
-          {/* Animated Background Gradients */}
-          <div className="absolute inset-0 overflow-hidden">
-            <div className="absolute top-1/4 left-1/4 w-[300px] h-[300px] bg-rose-600/10 rounded-full blur-[80px] animate-pulse"></div>
-            <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] bg-amber-500/10 rounded-full blur-[80px] animate-pulse" style={{ animationDelay: '1s' }}></div>
-          </div>
-
-          {/* Content Container */}
-          <div className="relative flex flex-col items-center max-w-sm px-6 text-center">
-            {/* Icon/Logo with Rotating Glowing Border */}
-            <div className="relative mb-6 group">
-              {/* Glow Ring */}
-              <div className="absolute -inset-1.5 bg-gradient-to-r from-rose-600 via-amber-500 to-rose-600 rounded-full blur opacity-75 animate-spin" style={{ animationDuration: '6s' }}></div>
-              
-              {/* Circle Card holding Logo */}
-              <div className="relative w-28 h-28 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center overflow-hidden p-4 shadow-2xl">
-                <img src={`${prefix}/logo.png`} alt="Fendi Broiler Logo" className="w-full h-full object-contain animate-bounce" style={{ animationDuration: '3s' }} />
-              </div>
-            </div>
-
-            {/* Brand Title with smooth slide-up / fade-in */}
-            <h2 className="text-3xl font-extrabold text-white tracking-tight leading-none drop-shadow-md">
-              <span className="bg-gradient-to-r from-rose-500 via-amber-400 to-amber-500 bg-clip-text text-transparent">Fendi Broiler</span>
-            </h2>
-            <p className="text-sm font-semibold text-slate-400 mt-2 tracking-wide uppercase">Nota Digital</p>
-            
-            {/* Subtitle */}
-            <p className="text-xs text-slate-500 font-medium mt-4 max-w-[280px]">
-              Supplier Ayam & Bebek Segar — Bersih, Halal, Higienis & Berkualitas
-            </p>
-
-            {/* Elegant Spinner */}
-            <div className="mt-12 flex items-center gap-2 text-slate-400 text-xs font-semibold">
-              <div className="w-4 h-4 border-2 border-amber-500/30 border-t-amber-500 rounded-full animate-spin"></div>
-              <span>Memuat sistem...</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {mounted && (
-        <>
-          {/* HEADER NAV */}
+      {/* HEADER NAV */}
       <nav className="header-nav">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -599,8 +546,6 @@ export default function Home() {
 
         </div>
       </div>
-        </>
-      )}
     </>
   );
 }

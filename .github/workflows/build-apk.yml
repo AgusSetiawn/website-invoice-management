@@ -34,14 +34,19 @@ jobs:
 
       - name: Build Next.js
         env:
-          IS_CAPACITOR: "true"
+          CAPACITOR_BUILD: "true"
         run: npx next build --webpack
+
+      - name: Generate Capacitor Assets & Splash Screen
+        run: |
+          npm install @capacitor/assets @capacitor/splash-screen
+          mkdir -p assets
+          cp public/logo.png assets/icon.png
+          cp public/logo.png assets/splash.png
+          npx @capacitor/assets generate --android --iconBackgroundColor '#ffffff' --splashBackgroundColor '#ffffff'
 
       - name: Sync Capacitor
         run: npx cap sync android
-
-      - name: Generate Android App Icons
-        run: node scripts/generate-assets.js
 
       - name: Build Android APK
         working-directory: ./android

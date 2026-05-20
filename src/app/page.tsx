@@ -313,7 +313,7 @@ export default function Home() {
                       {/* Jumlah */}
                       <div className="w-full min-w-0">
                         <label className="lbl text-[11px] md:hidden">Jumlah</label>
-                        <input className="w-full px-2 py-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-800 text-base font-bold text-center focus:outline-none focus:bg-white focus:border-brand focus:ring-4 focus:ring-brand/10 transition-all" type="number" min={0} max={99999} placeholder="1" value={item.qty || ""} onChange={e => updateItem(item.id, "qty", e.target.value)} />
+                        <input className="w-full px-2 py-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-800 text-base font-bold text-center focus:outline-none focus:bg-white focus:border-brand focus:ring-4 focus:ring-brand/10 transition-all" type="number"  max={99999} placeholder="0" value={item.qty || ""} onChange={e => updateItem(item.id, "qty", e.target.value)} />
                       </div>
                       
                       {/* Harga */}

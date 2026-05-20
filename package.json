@@ -14,7 +14,7 @@
   "dependencies": {
     "@capacitor/android": "^8.3.4",
     "@capacitor/core": "^8.3.4",
-    "@capacitor/splash-screen": "^6.0.2",
+    "@capacitor/splash-screen": "^8.0.1",
     "@ducanh2912/next-pwa": "^10.2.9",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",

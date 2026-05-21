@@ -1,551 +1,553 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
-import html2canvas from "html2canvas";
-import jsPDF from "jspdf";
-import { 
-  Plus, Trash2, Download, MessageCircle, RotateCcw, 
-  User, Search, Banknote, Tag, Calculator, CheckCircle2, 
-  Settings, Receipt, PenLine, CreditCard, Clock, Layers, Copy, Calendar
-} from "lucide-react";
-
-/* ─── Types ─────────────────────────────────────────────── */
-interface Item { id: number; name: string; qty: number; price: number; }
-
-const STORAGE_KEY = "nota_config";
-const defaultConfig = { 
-  businessName: "Fandi Boiler", 
-  subtitle: "Supplier Ayam & Bebek Segar — Bersih, Halal, Higienis & Berkualitas" 
-};
+import { useState, useEffect, useMemo } from "react";
+import { Plus, FolderOpen, Phone, MapPin, Receipt, ArrowUpRight, ArrowDownLeft, X, MessageCircle, Wallet, UserPlus, ChevronDown, ChevronUp, Trash2, Layers, Search, CheckCircle2, Clock } from "lucide-react";
+import { getContacts, getTransactions, saveContacts, saveTransactions, Contact, Transaction } from "@/lib/store";
+import Link from "next/link";
 
 function fmtRp(n: number) {
   return "Rp " + n.toLocaleString("id-ID");
 }
 
-const prefix = process.env.NODE_ENV === "production" ? "/website-invoice-management" : "";
-
-const parseRp = (val: string): number => {
-  const clean = val.replace(/\D/g, "");
-  return Math.min(999999999, Number(clean) || 0);
-};
-
-const formatRpInput = (val: number): string => {
-  if (!val) return "";
-  return "Rp " + val.toLocaleString("id-ID");
-};
-
-/* ─── Main Page ─────────────────────────────────────────── */
-export default function Home() {
+export default function Dashboard() {
   const [mounted, setMounted] = useState(false);
-  const config = defaultConfig;
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-  // Form State
-  const [customerName, setCustomerName] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [bon, setBon] = useState(0);
-  const [cash, setCash] = useState(0);
-  const [items, setItems] = useState<Item[]>([{ id: Date.now(), name: "", qty: 0, price: 0 }]);
-  const [nextId, setNextId] = useState(2);
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+  const [expandedFolderId, setExpandedFolderId] = useState<string | null>(null);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{show: boolean, msg: string, onConfirm: () => void}>({show: false, msg: '', onConfirm: () => {}});
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState<"all" | "debt" | "paid">("all");
 
-  const printRef = useRef<HTMLDivElement>(null);
+  const confirmAction = (msg: string, onConfirm: () => void) => {
+    setConfirmModal({show: true, msg, onConfirm});
+  };
+  
+  // Forms
+  const [newContact, setNewContact] = useState({ name: "", address: "", phone: "" });
+  const [newTransaction, setNewTransaction] = useState({ type: "bon" as "bon" | "payment", amount: "", note: "" });
 
   useEffect(() => {
+    setContacts(getContacts());
+    setTransactions(getTransactions());
     setMounted(true);
-    // Clear any previously saved local storage configurations to force update to Fendi Broiler
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch { /* ignore */ }
   }, []);
 
-  /* ─── Derived Math ─── */
-  const totalJenis = items.filter(i => i.name.trim()).length;
-  const totalQty   = items.reduce((s, i) => s + (i.qty || 0), 0);
-  const totalBarang = items.reduce((s, i) => s + (i.qty * i.price), 0);
-  const grandTotal = totalBarang + bon - cash;
-  
-  // Update logic for isLunas since grandTotal now represents the remaining amount to pay
-  const isLunas = grandTotal <= 0 && totalBarang > 0;
-  const isHutang = grandTotal > 0 && bon > 0;
-
-  /* ─── Items CRUD ─── */
-  const addItem = () => {
-    setItems(prev => [...prev, { id: nextId, name: "", qty: 0, price: 0 }]);
-    setNextId(n => n + 1);
-  };
-  const updateItem = (id: number, field: keyof Item, val: string | number) => {
-    setItems(prev => prev.map(i => {
-      if (i.id !== id) return i;
-      let sanitizedVal = val;
-      if (field === "qty") {
-        // Clamp Qty between 0 and 99.999
-        sanitizedVal = Math.min(99999, Math.max(0, Number(val) || 0));
-      } else if (field === "price") {
-        // Clamp Price between 0 and 999.999.999, handling formatted string input safely
-        const cleanPrice = String(val).replace(/\D/g, "");
-        sanitizedVal = Math.min(999999999, Math.max(0, Number(cleanPrice) || 0));
-      } else if (field === "name") {
-        // Truncate Name to 40 characters
-        sanitizedVal = String(val).substring(0, 40);
-      }
-      return { ...i, [field]: sanitizedVal };
-    }));
-  };
-  const removeItem = (id: number) => {
-    if (items.length === 1) return;
-    setItems(prev => prev.filter(i => i.id !== id));
-  };
-  const reset = () => {
-    setCustomerName(""); setDate(new Date().toISOString().split("T")[0]); setBon(0); setCash(0);
-    setItems([{ id: Date.now(), name: "", qty: 0, price: 0 }]); setNextId(2);
+  const getContactHutang = (contactId: string) => {
+    return transactions
+      .filter(tx => tx.contactId === contactId)
+      .reduce((sum, tx) => sum + (tx.type === 'bon' ? tx.amount - (tx.cash || 0) : -tx.amount), 0);
   };
 
-  /* ─── Export & Share ─── */
-  const exportPDF = async () => {
-    if (!printRef.current) return;
-    try {
-      const canvas = await html2canvas(printRef.current, { scale: 3, useCORS: true, backgroundColor: "#ffffff" });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a5"); // A5 is better for small receipts
-      const w = pdf.internal.pageSize.getWidth();
-      const h = (canvas.height * w) / canvas.width;
-      pdf.addImage(imgData, "PNG", 0, 0, w, h);
-      pdf.save(`Nota-${customerName || "Customer"}.pdf`);
-    } catch { alert("Gagal export PDF."); }
-  };
-
-  const buildText = () => {
-    return [
-      `*${config.businessName}*`,
-      `──────────────────`,
-      `Pembeli: *${customerName || "-"}*`,
-      `Tanggal: ${new Date(date).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" })}`,
-      ``,
-      `*Daftar Barang:*`,
-      ...items.filter(i => i.name.trim()).map((i, idx) =>
-        `${idx + 1}. ${i.name} — ${i.qty} x ${fmtRp(i.price)} = *${fmtRp(i.qty * i.price)}*`
-      ),
-      ``,
-      `Total Barang: ${fmtRp(totalBarang)}`,
-      bon > 0 ? `BON: ${fmtRp(bon)}` : null,
-      cash > 0 ? `Cash: ${fmtRp(cash)}` : null,
-      `──────────────────`,
-      `*${grandTotal < 0 ? 'KEMBALIAN' : 'TOTAL'}: ${fmtRp(Math.abs(grandTotal))}*`,
-    ].filter(l => l !== null).join("\n");
-  };
-
-  const shareWA = async () => {
-    if (!printRef.current) return;
-    try {
-      const canvas = await html2canvas(printRef.current, { scale: 3, useCORS: true, backgroundColor: "#ffffff" });
-      
-      canvas.toBlob(async (blob) => {
-        if (!blob) {
-          alert("Gagal memproses gambar.");
-          return;
-        }
-
-        const fileName = `Nota-${customerName || "Customer"}.png`;
-        const file = new File([blob], fileName, { type: "image/png" });
-
-        // 1. Mobile Share (Direct image attachment in WhatsApp)
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({
-              files: [file],
-              title: "Nota Belanja Fendi Broiler",
-            });
-            return;
-          } catch (err) {
-            console.log("Share cancelled or failed", err);
-            return;
-          }
-        }
-
-        // 2. Desktop Fallback (Copy image to Clipboard + Open WhatsApp)
-        try {
-          const item = new ClipboardItem({ "image/png": blob });
-          await navigator.clipboard.write([item]);
-          
-          alert(
-            "Gambar Nota telah otomatis disALIN ke Clipboard!\n\n" +
-            "Anda akan dialihkan ke WhatsApp. Di ruang obrolan, silakan langsung tekan Ctrl+V (atau Klik Kanan -> Tempel/Paste) untuk langsung mengirim gambar nota."
-          );
-        } catch (clipboardErr) {
-          console.error("Clipboard copy failed", clipboardErr);
-          alert(
-            "Browser Anda memblokir salin gambar otomatis.\n\n" +
-            "Silakan gunakan tombol 'Cetak PDF' untuk mengunduh nota, lalu kirim filenya secara manual."
-          );
-          return;
-        }
-
-        window.open("https://wa.me/", "_blank");
-      }, "image/png");
-
-    } catch (e) {
-      alert("Gagal memproses nota.");
-    }
-  };
-  
-  const copyText = () => {
-    navigator.clipboard.writeText(buildText());
-    alert("Teks berhasil disalin!");
-  };
+  const filteredContacts = useMemo(() => {
+    return contacts.filter(c => {
+      const hutang = getContactHutang(c.id);
+      const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase());
+      if (!matchesSearch) return false;
+      if (filterStatus === "debt" && hutang <= 0) return false;
+      if (filterStatus === "paid" && hutang > 0) return false;
+      return true;
+    });
+  }, [contacts, transactions, searchQuery, filterStatus]);
 
   if (!mounted) return null;
 
+  // Metrics
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+
+  let totalHutang = 0;
+  let terbayarBulanIni = 0;
+
+  transactions.forEach((tx) => {
+    const txDate = new Date(tx.date);
+    const isCurrentMonth = txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear;
+
+    if (tx.type === "bon") {
+      totalHutang += tx.amount;
+      if (tx.cash) {
+        totalHutang -= tx.cash;
+        if (isCurrentMonth) terbayarBulanIni += tx.cash;
+      }
+    } else if (tx.type === "payment") {
+      totalHutang -= tx.amount;
+      if (isCurrentMonth) terbayarBulanIni += tx.amount;
+    }
+  });
+
+  const handleAddContact = () => {
+    if (!newContact.name.trim()) return;
+    const contact: Contact = {
+      id: Date.now().toString(),
+      name: newContact.name,
+      address: newContact.address,
+      phone: newContact.phone,
+    };
+    const updated = [...contacts, contact];
+    setContacts(updated);
+    saveContacts(updated);
+    setIsContactModalOpen(false);
+    setNewContact({ name: "", address: "", phone: "" });
+  };
+
+  const handleDeleteContact = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    confirmAction("Yakin ingin menghapus folder ini beserta semua riwayat transaksinya?", () => {
+      const updatedContacts = contacts.filter(c => c.id !== id);
+      const updatedTxs = transactions.filter(tx => tx.contactId !== id);
+      setContacts(updatedContacts);
+      setTransactions(updatedTxs);
+      saveContacts(updatedContacts);
+      saveTransactions(updatedTxs);
+      if (expandedFolderId === id) setExpandedFolderId(null);
+    });
+  };
+
+  const handleAddTransaction = (contactId: string) => {
+    if (!newTransaction.amount) return;
+    const amount = Number(newTransaction.amount.replace(/\D/g, ""));
+    if (amount <= 0) return;
+
+    const tx: Transaction = {
+      id: Date.now().toString(),
+      contactId: contactId,
+      date: new Date().toISOString(),
+      type: newTransaction.type,
+      amount,
+      note: newTransaction.note
+    };
+    
+    const updated = [...transactions, tx];
+    setTransactions(updated);
+    saveTransactions(updated);
+    setNewTransaction({ type: "bon", amount: "", note: "" });
+  };
+
+  const handleDeleteTransaction = (id: string) => {
+    confirmAction("Yakin ingin menghapus riwayat transaksi ini?", () => {
+      const updated = transactions.filter(tx => tx.id !== id);
+      setTransactions(updated);
+      saveTransactions(updated);
+    });
+  };
+
+  const toggleFolder = (id: string) => {
+    if (expandedFolderId === id) {
+      setExpandedFolderId(null);
+    } else {
+      setExpandedFolderId(id);
+      setNewTransaction({ type: "bon", amount: "", note: "" });
+    }
+  };
+
+  const generateWARekap = (contact: Contact, hutang: number) => {
+    const contactTxs = transactions
+      .filter(tx => tx.contactId === contact.id)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      
+    let text = `Halo *${contact.name}*,\nBerikut adalah rekap tagihan berjalan Anda per tanggal ${new Date().toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'})}.\n\n`;
+    text += `*RINCIAN TRANSAKSI:*\n`;
+    
+    let runningBalance = 0;
+    contactTxs.forEach(tx => {
+      const dateStr = new Date(tx.date).toLocaleDateString('id-ID', {day:'2-digit', month:'2-digit', year:'2-digit'});
+      if (tx.type === 'bon') {
+        const netAmount = tx.amount - (tx.cash || 0);
+        runningBalance += netAmount;
+        if (netAmount > 0) {
+           text += `• ${dateStr} - Nota Belanja: +${fmtRp(netAmount)}\n`;
+        }
+      } else {
+        runningBalance -= tx.amount;
+        text += `• ${dateStr} - Pembayaran: -${fmtRp(tx.amount)}\n`;
+      }
+    });
+
+    text += `\n*TOTAL SISA HUTANG: ${fmtRp(Math.max(0, runningBalance))}*\n\n`;
+    text += `Mohon dicek kembali, terima kasih! 🙏`;
+    return text;
+  };
+
+  const totalPotensiPiutang = totalHutang + terbayarBulanIni;
+  const persenTerbayar = totalPotensiPiutang === 0 ? 0 : Math.min(100, Math.round((terbayarBulanIni / totalPotensiPiutang) * 100));
+
   return (
-    <>
-      {/* HEADER NAV */}
-      <nav className="header-nav">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-14 w-14 flex items-center justify-center">
-              <img src={`${prefix}/logo.png`} alt="Logo" className="max-h-full max-w-full object-contain" />
+    <div className="p-4 sm:p-6 lg:p-8 space-y-8 animate-fade-in">
+      {/* ── Dashboard Cards ── */}
+      <section>
+        <h2 className="text-xl font-bold text-slate-800 mb-4 px-1">Ringkasan Keuangan</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-3xl p-6 text-white shadow-lg shadow-rose-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 bg-white/20 rounded-xl"><ArrowUpRight size={24} className="text-white" /></div>
+              <h3 className="font-semibold text-rose-50 tracking-wide text-sm">HUTANG BELUM TERBAYAR</h3>
             </div>
-            <div>
-              <h1 className="text-xl font-black text-slate-800 tracking-tight leading-none">{config.businessName}</h1>
-              <p className="text-xs text-slate-500 font-medium mt-1">{config.subtitle}</p>
+            <div className="text-3xl font-black">{fmtRp(Math.max(0, totalHutang))}</div>
+            <p className="text-sm text-rose-100 mt-2">Total bon aktif di semua pelanggan</p>
+          </div>
+
+          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-3xl p-6 text-white shadow-lg shadow-emerald-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 bg-white/20 rounded-xl"><ArrowDownLeft size={24} className="text-white" /></div>
+              <h3 className="font-semibold text-emerald-50 tracking-wide text-sm">TERBAYARKAN BULAN INI</h3>
+            </div>
+            <div className="text-3xl font-black">{fmtRp(terbayarBulanIni)}</div>
+            
+            {/* Mini Progress Bar Keuangan */}
+            <div className="mt-4">
+              <div className="flex justify-between text-xs text-emerald-100 font-semibold mb-1.5">
+                <span>Progres Penagihan</span>
+                <span>{persenTerbayar}%</span>
+              </div>
+              <div className="w-full h-2 bg-black/10 rounded-full overflow-hidden">
+                <div className="h-full bg-white transition-all duration-1000 ease-out" style={{ width: `${persenTerbayar}%` }}></div>
+              </div>
             </div>
           </div>
         </div>
-      </nav>
+      </section>
 
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-10">
-        <div className="grid grid-cols-1 lg:grid-cols-[1.618fr_1fr] gap-8 items-start">
-          
-          {/* ============================================================== */}
-          {/* LEFT COLUMN: DATA ENTRY (Form)                                 */}
-          {/* ============================================================== */}
-          <div className="space-y-6">
-            
-            {/* 1. Kustomer & Pembayaran */}
-            <div className="card p-6 md:p-8">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 rounded-lg bg-blue-50 text-brand"><User size={24} /></div>
-                <h2 className="text-xl font-bold text-slate-800">Informasi Dasar</h2>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="lbl">Nama Pembeli</label>
-                  <div className="inp-group">
-                    <PenLine size={20} className="inp-icon" />
-                    <input className="inp" placeholder="Ketik nama pembeli..." value={customerName} onChange={e => setCustomerName(e.target.value.substring(0, 30))} maxLength={30} />
-                  </div>
-                </div>
-                <div>
-                  <label className="lbl">Tanggal Transaksi</label>
-                  <div className="inp-group">
-                    <Calendar size={20} className="inp-icon" />
-                    <input className="inp" type="date" value={date} onChange={e => setDate(e.target.value)} />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="lbl text-success">Cash (Tunai)</label>
-                  <div className="inp-group">
-                    <Banknote size={20} className="inp-icon text-success" />
-                    <input className="inp font-bold" type="text" value={formatRpInput(cash)} onChange={e => setCash(parseRp(e.target.value))} placeholder="Rp 0" />
-                  </div>
-                </div>
-                <div>
-                  <label className="lbl text-warning">BON (Hutang)</label>
-                  <div className="inp-group">
-                    <CreditCard size={20} className="inp-icon text-warning" />
-                    <input className="inp font-bold" type="text" value={formatRpInput(bon)} onChange={e => setBon(parseRp(e.target.value))} placeholder="Rp 0" />
-                  </div>
-                </div>
-              </div>
-            </div>
+      {/* ── Folder/Kontak Section ── */}
+      <section>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 px-1">
+          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2 whitespace-nowrap">
+            <FolderOpen size={24} className="text-brand" /> Folder Pelanggan
+          </h2>
+          <button 
+            onClick={() => setIsContactModalOpen(true)}
+            className="flex items-center gap-2 bg-indigo-50 text-brand px-4 py-2.5 rounded-xl font-bold text-sm touch-bounce w-full sm:w-auto justify-center"
+          >
+            <UserPlus size={18} /> <span>Tambah Kontak</span>
+          </button>
+        </div>
 
-            {/* 2. Daftar Barang */}
-            <div className="card p-6 md:p-8">
-              <div className="flex justify-between items-center mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-indigo-50 text-indigo-500"><Layers size={24} /></div>
-                  <h2 className="text-xl font-bold text-slate-800">Daftar Barang</h2>
-                </div>
-                <button className="btn-secondary !py-2.5 !px-4 text-brand hover:bg-brand/5 border-dashed border-2 hover:border-brand/30 text-sm flex items-center gap-1.5" onClick={addItem}>
-                  <Plus size={18} /> Tambah Baris
-                </button>
-              </div>
+        {/* Search & Filter Pintar */}
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-6 flex flex-col md:flex-row gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Cari nama pelanggan..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 focus:border-brand focus:ring-2 focus:ring-brand/20 rounded-xl text-sm font-semibold transition-all outline-none"
+            />
+          </div>
+          <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-200 overflow-x-auto hide-scrollbar">
+            <button onClick={() => setFilterStatus("all")} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${filterStatus === 'all' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>Semua</button>
+            <button onClick={() => setFilterStatus("debt")} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${filterStatus === 'debt' ? 'bg-amber-100 text-amber-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Hanya Berhutang</button>
+            <button onClick={() => setFilterStatus("paid")} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${filterStatus === 'paid' ? 'bg-emerald-100 text-emerald-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Lunas</button>
+          </div>
+        </div>
 
-              {/* Table Header (Desktop) */}
-              <div className="hidden md:grid grid-cols-[40px_4fr_1.5fr_2.5fr_2.5fr_40px] gap-4 px-4 mb-3">
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 text-center">No</div>
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400">Nama Barang</div>
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 text-center">Jumlah</div>
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 text-right">Harga (Rp)</div>
-                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 text-right">Subtotal</div>
-                <div></div>
-              </div>
+        {filteredContacts.length === 0 ? (
+          <div className="text-center py-12 bg-white rounded-3xl border-2 border-dashed border-slate-200">
+            <FolderOpen size={48} className="mx-auto text-slate-300 mb-4" />
+            <p className="text-slate-500 font-medium">{contacts.length === 0 ? "Belum ada folder pelanggan." : "Tidak ada folder yang cocok."}</p>
+            <p className="text-sm text-slate-400 mt-1">{contacts.length === 0 ? "Buat folder baru untuk mencatat transaksi." : "Coba ubah kata kunci atau filter."}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 items-start">
+            {filteredContacts.map(contact => {
+              const hutang = getContactHutang(contact.id);
+              const isExpanded = expandedFolderId === contact.id;
+              const isHutang = hutang > 0;
 
-              {/* Items List */}
-              <div className="space-y-3">
-                {items.map((item, idx) => (
-                  <div key={item.id} className="group relative flex flex-col md:grid md:grid-cols-[40px_4fr_1.5fr_2.5fr_2.5fr_40px] gap-3 md:gap-4 items-start md:items-center p-4 md:p-3 bg-white border border-slate-200/60 hover:border-brand/30 hover:shadow-md rounded-2xl transition-all duration-200">
-                    
-                    {/* MOBILE TOP BAR (Title & Delete Button) */}
-                    <div className="w-full flex items-center justify-between md:hidden mb-1">
+              return (
+                <div key={contact.id} className={`card card-hover bg-white rounded-3xl border-2 shadow-sm transition-all overflow-hidden ${isHutang ? 'border-amber-100 hover:border-amber-300' : 'border-emerald-100 hover:border-emerald-300'}`}>
+                  {/* Card Header (Clickable) */}
+                  <div 
+                    onClick={() => toggleFolder(contact.id)} 
+                    className="p-5 cursor-pointer hover:bg-slate-50/50 transition-colors flex justify-between items-start group"
+                  >
+                    <div className="flex-1">
                       <div className="flex items-center gap-2">
-                         <span className="w-6 h-6 rounded bg-slate-100 text-slate-500 font-bold text-xs flex items-center justify-center">{idx + 1}</span>
-                         <label className="lbl !mb-0 text-slate-600">Item Barang</label>
-                      </div>
-                      <button onClick={() => removeItem(item.id)} disabled={items.length === 1} className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 text-slate-400 hover:text-danger hover:bg-danger/10 flex items-center justify-center disabled:opacity-20 transition-all">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-
-                    {/* No (Desktop only) */}
-                    <div className="hidden md:flex justify-center">
-                      <span className="w-7 h-7 rounded-lg bg-slate-100 text-slate-500 font-bold text-xs flex items-center justify-center group-hover:bg-brand/10 group-hover:text-brand transition-colors">
-                        {idx + 1}
-                      </span>
-                    </div>
-
-                    {/* Nama Barang */}
-                    <div className="w-full min-w-0">
-                      <input className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-800 text-base font-semibold focus:outline-none focus:bg-white focus:border-brand focus:ring-4 focus:ring-brand/10 transition-all placeholder:text-slate-300" placeholder="Ketik nama barang..." value={item.name} onChange={e => updateItem(item.id, "name", e.target.value)} maxLength={40} />
-                    </div>
-                    
-                    {/* MOBILE GRID: Jumlah & Harga */}
-                    <div className="w-full grid grid-cols-[1fr_2.5fr] gap-3 md:contents">
-                      {/* Jumlah */}
-                      <div className="w-full min-w-0">
-                        <label className="lbl text-[11px] md:hidden">Jumlah</label>
-                        <input className="w-full px-2 py-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-800 text-base font-bold text-center focus:outline-none focus:bg-white focus:border-brand focus:ring-4 focus:ring-brand/10 transition-all" type="number" max={99999} placeholder="0" value={item.qty || ""} onChange={e => updateItem(item.id, "qty", e.target.value)} />
+                        <h3 className="font-bold text-lg text-slate-800">{contact.name}</h3>
+                        <button 
+                          onClick={(e) => handleDeleteContact(contact.id, e)}
+                          className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                          title="Hapus Folder"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                       
-                      {/* Harga */}
-                      <div className="w-full min-w-0">
-                        <label className="lbl text-[11px] md:hidden">Harga (Rp)</label>
-                        <input className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-slate-800 text-base font-bold text-right focus:outline-none focus:bg-white focus:border-brand focus:ring-4 focus:ring-brand/10 transition-all" type="text" placeholder="Rp 0" value={formatRpInput(item.price)} onChange={e => updateItem(item.id, "price", e.target.value)} />
+                      {/* Status Badge Pintar */}
+                      <div className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wider flex items-center gap-1.5 w-max mt-2 mb-1 border ${isHutang ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200'}`}>
+                        {isHutang ? <><Clock size={12} className={hutang > 1000000 ? "animate-pulse" : ""} /> ADA BON</> : <><CheckCircle2 size={12} /> LUNAS</>}
+                      </div>
+
+                      <div className="flex flex-col gap-1 mt-3">
+                        {contact.phone && (
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                            <Phone size={12} className="text-slate-400" /> {contact.phone}
+                          </div>
+                        )}
+                        {contact.address && (
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500 line-clamp-1">
+                            <MapPin size={12} className="text-slate-400" /> {contact.address}
+                          </div>
+                        )}
                       </div>
                     </div>
-                    
-                    {/* Subtotal */}
-                    <div className="w-full flex items-center justify-between md:justify-end gap-3 mt-1 md:mt-0 pt-3 md:pt-0 border-t border-slate-100 md:border-none">
-                      <label className="lbl !mb-0 md:hidden">Subtotal</label>
-                      <div className="text-lg font-black text-brand text-right pr-2">{fmtRp(item.qty * item.price)}</div>
-                    </div>
-
-                    {/* Action (Desktop only) */}
-                    <div className="hidden md:flex justify-end">
-                      <button onClick={() => removeItem(item.id)} disabled={items.length === 1} className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 text-slate-400 hover:text-danger hover:bg-danger/10 hover:border-danger/20 flex items-center justify-center disabled:opacity-20 transition-all">
-                        <Trash2 size={18} />
-                      </button>
+                    <div className="flex flex-col items-end gap-3 ml-3">
+                      <div className={`p-1.5 rounded-lg ${isExpanded ? 'bg-slate-200 text-slate-600' : 'bg-slate-100 text-slate-400'}`}>
+                        {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Sisa Hutang</span>
+                        <span className={`font-black text-sm ${hutang > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{fmtRp(Math.max(0, hutang))}</span>
+                      </div>
                     </div>
                   </div>
-                ))}
-              </div>
 
-              <div className="mt-4"></div>
-            </div>
+                  {/* Expanded Content */}
+                  {isExpanded && (
+                    <div className="p-5 pt-2 border-t border-slate-100 bg-slate-50/50 animate-slide-up origin-top">
+                      
+                      {/* Aksi Cepat */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
+                        <Link href={`/invoice?contactId=${contact.id}`} className="flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl bg-indigo-50 border border-indigo-100 text-brand hover:bg-indigo-100 touch-bounce">
+                          <Receipt size={20} />
+                          <span className="text-[11px] font-bold">Buat Nota</span>
+                        </Link>
+                        
+                        <button 
+                          onClick={() => {
+                            setNewTransaction({...newTransaction, type: "payment"});
+                            const inputEl = document.getElementById(`manual-input-${contact.id}`);
+                            if (inputEl) inputEl.focus();
+                          }} 
+                          className="flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl bg-amber-50 border border-amber-100 text-amber-600 hover:bg-amber-100 touch-bounce"
+                        >
+                          <Wallet size={20} />
+                          <span className="text-[11px] font-bold">Terima Cicilan</span>
+                        </button>
 
-          </div>
+                        {contact.phone ? (
+                          <a href={`https://wa.me/${contact.phone.replace(/^0/, '62')}`} target="_blank" rel="noreferrer" className="flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-600 hover:bg-emerald-100 touch-bounce col-span-2 sm:col-span-1">
+                            <MessageCircle size={20} />
+                            <span className="text-[11px] font-bold">Chat WA</span>
+                          </a>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl bg-slate-100 border border-slate-200 text-slate-400 opacity-70 col-span-2 sm:col-span-1">
+                            <MessageCircle size={20} />
+                            <span className="text-[11px] font-bold">Tanpa WA</span>
+                          </div>
+                        )}
+                      </div>
 
-          {/* ============================================================== */}
-          {/* RIGHT COLUMN: LIVE SUMMARY / ACTIONS                           */}
-          {/* ============================================================== */}
-          <div>
-            <div className="sticky top-28 space-y-6">
-              
-              {/* Preview Card */}
-              <div className="card shadow-xl shadow-slate-200/50 p-6 md:p-8 bg-white">
-                <div className="flex items-center justify-between border-b-2 border-slate-100 pb-4 mb-6">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Ringkasan Nota</h3>
-                    <div className="text-lg font-black text-slate-800 mt-1">{customerName || "Tanpa Nama"}</div>
-                  </div>
-                  <div className={`px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 ${isLunas ? 'bg-success/10 text-success' : isHutang ? 'bg-warning/10 text-warning' : 'bg-slate-100 text-slate-500'}`}>
-                    {isLunas ? <CheckCircle2 size={14} /> : isHutang ? <Clock size={14} /> : <Calculator size={14} />}
-                    {isLunas ? "LUNAS" : isHutang ? "NGUTANG" : "DRAFT"}
-                  </div>
-                </div>
+                      {/* Riwayat Transaksi */}
+                      <div className="mb-5">
+                        <h4 className="font-bold text-slate-700 mb-3 text-xs uppercase tracking-wider">Riwayat Transaksi</h4>
+                        {transactions.filter(tx => tx.contactId === contact.id).length === 0 ? (
+                          <div className="text-center p-4 bg-slate-100/50 rounded-xl border border-slate-200 border-dashed text-slate-400 text-sm">
+                            Belum ada riwayat transaksi
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                            {transactions.filter(tx => tx.contactId === contact.id)
+                              .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                              .map(tx => (
+                              <div key={tx.id} className="group flex justify-between items-center bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:border-slate-300 transition-all cursor-pointer" onClick={() => setSelectedTx(tx)}>
+                                <div>
+                                  <div className="font-bold text-slate-700 text-sm">
+                                    {tx.type === 'bon' 
+                                      ? (tx.cash !== undefined && tx.cash >= tx.amount ? 'Nota Belanja (Lunas)' : 'Nota Belanja') 
+                                      : 'Pembayaran Hutang'}
+                                  </div>
+                                  <div className="text-xs text-slate-500 mt-0.5">
+                                    {new Date(tx.date).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})}
+                                    {tx.note && <span className="text-slate-400"> • {tx.note}</span>}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  {tx.type === 'bon' ? (
+                                    <div className="text-right">
+                                      <div className={`font-black text-sm ${tx.amount - (tx.cash || 0) <= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        {tx.amount - (tx.cash || 0) <= 0 ? '' : '+'}{fmtRp(Math.max(0, tx.amount - (tx.cash || 0)))}
+                                      </div>
+                                      {tx.cash ? <div className="text-[10px] text-slate-400 mt-0.5">Tagihan: {fmtRp(tx.amount)}</div> : null}
+                                    </div>
+                                  ) : (
+                                    <div className="font-black text-sm text-emerald-600">
+                                      -{fmtRp(tx.amount)}
+                                    </div>
+                                  )}
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteTransaction(tx.id); }}
+                                    className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors opacity-100 md:opacity-0 md:group-hover:opacity-100"
+                                    title="Hapus Transaksi"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
-                <div className="space-y-4 mb-6 min-h-[120px]">
-                  {items.filter(i => i.name.trim()).length === 0 ? (
-                    <div className="text-center text-slate-400 text-sm py-8 border-2 border-dashed border-slate-100 rounded-xl">Belum ada barang ditambahkan</div>
-                  ) : (
-                    items.filter(i => i.name.trim()).map((i, idx) => (
-                      <div key={idx} className="flex justify-between items-start text-sm">
-                        <div className="flex gap-2">
-                          <span className="text-slate-400">{i.qty}x</span>
-                          <span className="font-semibold text-slate-700">{i.name}</span>
+                      {/* Form Transaksi */}
+                      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+                        <h4 className="font-bold text-slate-700 mb-3 text-xs uppercase tracking-wider">Catat Manual</h4>
+                        <div className="flex rounded-xl overflow-hidden mb-3 border border-slate-200">
+                          <button 
+                            onClick={() => setNewTransaction({...newTransaction, type: "bon"})} 
+                            className={`flex-1 py-2 text-xs font-bold transition-colors ${newTransaction.type === "bon" ? "bg-rose-500 text-white" : "bg-slate-50 text-slate-500 hover:bg-slate-100"}`}
+                          >
+                            Tambah Bon
+                          </button>
+                          <button 
+                            onClick={() => setNewTransaction({...newTransaction, type: "payment"})} 
+                            className={`flex-1 py-2 text-xs font-bold transition-colors ${newTransaction.type === "payment" ? "bg-emerald-500 text-white" : "bg-slate-50 text-slate-500 hover:bg-slate-100"}`}
+                          >
+                            Bayar Hutang
+                          </button>
                         </div>
-                        <span className="font-bold text-slate-800">{fmtRp(i.qty * i.price)}</span>
+
+                        <div className="space-y-3">
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-sm">Rp</span>
+                            <input 
+                              id={`manual-input-${contact.id}`}
+                              type="text" 
+                              placeholder="0" 
+                              className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-brand focus:ring-2 focus:ring-brand/20 font-bold text-sm transition-all outline-none"
+                              value={newTransaction.amount ? "Rp " + Number(newTransaction.amount.replace(/\D/g, "")).toLocaleString("id-ID") : ""}
+                              onChange={e => setNewTransaction({...newTransaction, amount: e.target.value.replace(/\D/g, "")})}
+                            />
+                          </div>
+                          <input 
+                            type="text" 
+                            placeholder="Keterangan (Opsional)" 
+                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:border-brand focus:ring-2 focus:ring-brand/20 text-sm transition-all outline-none"
+                            value={newTransaction.note}
+                            onChange={e => setNewTransaction({...newTransaction, note: e.target.value})}
+                          />
+                          <button 
+                            onClick={() => handleAddTransaction(contact.id)}
+                            className={`w-full py-2.5 rounded-xl font-bold text-sm text-white touch-bounce ${newTransaction.type === "bon" ? "bg-rose-600 hover:bg-rose-700 shadow-rose-200" : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200"}`}
+                          >
+                            Simpan Data
+                          </button>
+                        </div>
                       </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="pt-4 border-t-2 border-slate-100 space-y-3">
-                  <div className="flex justify-between text-sm text-slate-500 font-medium">
-                    <span>Total Item</span><span>{totalQty} Pcs ({totalJenis} Jenis)</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-slate-500 font-medium">
-                    <span>Total Harga Item</span><span>{fmtRp(totalBarang)}</span>
-                  </div>
-                  {bon > 0 && (
-                    <div className="flex justify-between text-sm text-warning font-bold bg-warning/10 px-3 py-2 rounded-lg">
-                      <span>BON (Hutang)</span><span>{fmtRp(bon)}</span>
                     </div>
                   )}
-                  {cash > 0 && (
-                    <div className="flex justify-between text-sm text-success font-bold bg-success/10 px-3 py-2 rounded-lg">
-                      <span>Tunai (Cash)</span><span>{fmtRp(cash)}</span>
-                    </div>
-                  )}
-                  
-                  <div className={`flex justify-between items-center mt-2 p-4 rounded-2xl shadow-lg ${grandTotal < 0 ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 text-white' : 'bg-gradient-to-r from-slate-800 to-slate-900 text-white'}`}>
-                    <span className="font-bold">{grandTotal < 0 ? 'KEMBALIAN' : 'TOTAL BAYAR'}</span>
-                    <span className={`text-2xl font-black ${grandTotal < 0 ? 'text-white' : 'text-brand-light'}`}>{fmtRp(Math.abs(grandTotal))}</span>
-                  </div>
                 </div>
-              </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
-              {/* Action Buttons */}
-              <div className="flex flex-col gap-3">
-                <button className="btn-secondary !text-danger hover:!bg-danger/5 hover:!border-danger/30 w-full" onClick={reset}>
-                  <RotateCcw size={20} /> Kosongkan Form (Reset)
-                </button>
-                <div className="grid grid-cols-2 gap-3">
-                  <button className="btn-success" onClick={exportPDF}>
-                    <Download size={20} /> Cetak PDF
-                  </button>
-                  <button className="btn-wa" onClick={shareWA}>
-                    <MessageCircle size={20} /> WhatsApp
-                  </button>
-                </div>
+      {/* ── Modal Tambah Kontak ── */}
+      {isContactModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl animate-pop">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold text-slate-800">Folder Baru</h3>
+              <button onClick={() => setIsContactModalOpen(false)} className="p-2 bg-slate-100 rounded-full text-slate-500 hover:text-rose-500 transition-colors"><X size={20} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-2">Nama Pelanggan</label>
+                <input className="inp !py-3 !text-base" placeholder="Ketik nama..." value={newContact.name} onChange={e => setNewContact({...newContact, name: e.target.value})} />
               </div>
-
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-2">No. WhatsApp</label>
+                <input className="inp !py-3 !text-base" placeholder="Contoh: 081234..." type="tel" value={newContact.phone} onChange={e => setNewContact({...newContact, phone: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-2">Alamat (Opsional)</label>
+                <textarea className="w-full px-4 py-3 bg-white border border-slate-300 rounded-2xl focus:border-brand focus:ring-4 focus:ring-brand/10 transition-all font-semibold resize-none h-24 shadow-sm" placeholder="Ketik alamat..." value={newContact.address} onChange={e => setNewContact({...newContact, address: e.target.value})}></textarea>
+              </div>
+              <button onClick={handleAddContact} className="btn-primary w-full mt-2">
+                Simpan Folder
+              </button>
             </div>
           </div>
-
         </div>
-      </main>
-
-      {/* ── Hidden Print Area ───────────────────────────── */}
-      <div className="sr-only">
-        <div ref={printRef} style={{ fontFamily: "'Inter', sans-serif", background: "#fff", padding: "40px", width: "800px", minHeight: "210mm", color: "#000" }}>
-          
-          {/* Header using Table for perfect alignment in html2canvas */}
-          <table style={{ width: "100%", marginBottom: "24px", borderCollapse: "collapse", tableLayout: "fixed" }}>
-            <tbody>
-              <tr>
-                {/* Left - Logo (25%) */}
-                <td style={{ width: "25%", verticalAlign: "top" }}>
-                  <img src={`${prefix}/logo.png`} alt="Logo" style={{ width: "130px", height: "auto", objectFit: "contain", margin: 0, padding: 0 }} />
-                </td>
-                
-                {/* Center - INVOICE (50%) */}
-                <td style={{ width: "50%", verticalAlign: "top", textAlign: "center", padding: "0 20px" }}>
-                  <h1 style={{ fontSize: "36px", fontWeight: "900", margin: "0 0 10px 0", color: "#000", letterSpacing: "1px" }}>INVOICE</h1>
-                  <div style={{ fontSize: "14px", lineHeight: "1.5", color: "#000", margin: "0 auto", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <span>Pasar Tegaldanas, Jl. Pasar Tegaldanas, Desa Hegarmukti,</span>
-                    <span>Kec. Cikarang Pusat, Kab. Bekasi, Jawa Barat 17530</span>
-                  </div>
-                </td>
-
-                {/* Right - Info (25%) */}
-                <td style={{ width: "25%", verticalAlign: "top" }}>
-                  <div style={{ fontSize: "13px", color: "#000", marginTop: "64px", display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
-                    <div>
-                      <div style={{ display: "flex", marginBottom: "6px" }}>
-                        <span style={{ width: "70px", flexShrink: 0 }}>Tanggal :</span>
-                        <span>{new Date(date).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</span>
-                      </div>
-                      <div style={{ display: "flex" }}>
-                        <span style={{ width: "70px", flexShrink: 0 }}>Pembeli :</span>
-                        <span>{customerName || "-"}</span>
-                      </div>
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div style={{ borderTop: "2px solid #000", marginBottom: "16px" }}></div>
-
-          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0", marginBottom: "16px", fontSize: "14px" }}>
-            <thead>
-              <tr>
-                <td style={{ paddingBottom: "16px", paddingLeft: "12px", paddingRight: "12px", textAlign: "left", fontWeight: "600", width: "40px", backgroundColor: "#3b82f6", color: "#fff" }}>No</td>
-                <td style={{ paddingBottom: "16px", paddingLeft: "12px", paddingRight: "12px", textAlign: "left", fontWeight: "600", backgroundColor: "#3b82f6", color: "#fff" }}>Nama Barang</td>
-                <td style={{ paddingBottom: "16px", paddingLeft: "12px", paddingRight: "12px", textAlign: "center", fontWeight: "600", width: "80px", backgroundColor: "#3b82f6", color: "#fff" }}>Jumlah</td>
-                <td style={{ paddingBottom: "16px", paddingLeft: "12px", paddingRight: "12px", textAlign: "right", fontWeight: "600", width: "120px", backgroundColor: "#3b82f6", color: "#fff" }}>Harga/Pcs</td>
-                <td style={{ paddingBottom: "16px", paddingLeft: "12px", paddingRight: "12px", textAlign: "right", fontWeight: "600", width: "140px", backgroundColor: "#3b82f6", color: "#fff" }}>Subtotal</td>
-              </tr>
-            </thead>
-            <tbody>
-              {items.filter(i => i.name.trim()).length === 0 ? (
-                <tr style={{ backgroundColor: "#f8f9fa" }}>
-                  <td style={{ padding: "8px 12px", borderBottom: "1px solid #f1f5f9" }}>1</td>
-                  <td style={{ padding: "8px 12px", borderBottom: "1px solid #f1f5f9" }}></td>
-                  <td style={{ padding: "8px 12px", textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>0</td>
-                  <td style={{ padding: "8px 12px", textAlign: "right", borderBottom: "1px solid #f1f5f9" }}>Rp 0</td>
-                  <td style={{ padding: "8px 12px", textAlign: "right", borderBottom: "1px solid #f1f5f9" }}>Rp 0</td>
-                </tr>
-              ) : (
-                items.filter(i => i.name.trim()).map((item, i) => (
-                  <tr key={item.id} style={{ backgroundColor: i % 2 === 0 ? "#f8f9fa" : "#ffffff" }}>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>{i + 1}</td>
-                    <td style={{ padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>{item.name}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>{item.qty}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", borderBottom: "1px solid #f1f5f9" }}>{fmtRp(item.price)}</td>
-                    <td style={{ padding: "10px 12px", textAlign: "right", borderBottom: "1px solid #f1f5f9", fontWeight: "bold" }}>{fmtRp(item.qty * item.price)}</td>
-                  </tr>
-                ))
+      )}
+      {/* Modal Detail Transaksi */}
+      {selectedTx && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl animate-pop">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800 mb-1">Detail Transaksi</h3>
+                <p className="text-sm text-slate-500">{new Date(selectedTx.date).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit'})}</p>
+              </div>
+              <button onClick={() => setSelectedTx(null)} className="p-2 bg-slate-100 rounded-full text-slate-500 hover:text-rose-500 transition-colors"><X size={20} /></button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="flex justify-between items-center p-4 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="font-semibold text-slate-600">Jenis</span>
+                <span className={`font-bold px-3 py-1 rounded-lg text-xs ${selectedTx.type === 'bon' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                  {selectedTx.type === 'bon' ? 'Nota Belanja' : 'Pembayaran'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center p-4 rounded-xl bg-slate-50 border border-slate-100">
+                <span className="font-semibold text-slate-600">Tagihan Barang</span>
+                <span className="font-black text-lg text-slate-800">{fmtRp(selectedTx.amount)}</span>
+              </div>
+              {selectedTx.type === 'bon' && selectedTx.cash !== undefined && (
+                <div className="flex justify-between items-center p-4 rounded-xl bg-slate-50 border border-emerald-100">
+                  <span className="font-semibold text-emerald-600">Dibayar (Tunai)</span>
+                  <span className="font-black text-lg text-emerald-600">{fmtRp(selectedTx.cash)}</span>
+                </div>
               )}
-            </tbody>
-          </table>
-
-          <div style={{ borderTop: "1px solid #000", marginBottom: "16px" }}></div>
-
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", fontSize: "14px" }}>
-            <div style={{ fontWeight: "500" }}>
-              <div style={{ fontWeight: "bold", marginBottom: "4px" }}>Transfer Via:</div>
-              <div>BNI: 1920150577</div>
-              <div>a.n. Irfandi</div>
-            </div>
-
-            <div style={{ width: "250px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                <span style={{ fontWeight: "bold" }}>TOTAL</span>
-                <span style={{ fontWeight: "bold" }}>{fmtRp(totalBarang)}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px", color: "#22c55e" }}>
-                <span>BON</span>
-                <span>{fmtRp(bon)}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px", color: "#ef4444" }}>
-                <span>Cash</span>
-                <span>{fmtRp(cash)}</span>
-              </div>
-              <div style={{ borderTop: "2px solid #000", margin: "8px 0" }}></div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "16px" }}>
-                <span>Sisa :</span>
-                <span>{fmtRp(grandTotal)}</span>
-              </div>
+              {selectedTx.note && (
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="block font-semibold text-slate-600 mb-1 text-sm">Catatan</span>
+                  <p className="text-sm text-slate-800">{selectedTx.note}</p>
+                </div>
+              )}
+              
+              {selectedTx.items && selectedTx.items.length > 0 && (
+                <div className="mt-6 border-t border-slate-100 pt-4">
+                  <h4 className="font-bold text-slate-700 mb-3 text-sm flex items-center gap-2"><Layers size={16} className="text-indigo-500" /> Rincian Barang</h4>
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                    {selectedTx.items.map((item: any, idx: number) => (
+                      <div key={idx} className="flex justify-between items-center text-sm p-3 rounded-lg border border-slate-200 bg-white">
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-700">{item.qty}x</span>
+                          <span className="text-slate-600">{item.name}</span>
+                        </div>
+                        <span className="font-bold text-slate-800">{fmtRp(item.qty * item.price)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-
-          <div style={{ marginTop: "80px", display: "flex", justifyContent: "flex-end", gap: "60px", textAlign: "center", fontSize: "14px", paddingRight: "16px" }}>
-            <div style={{ width: "120px" }}>
-              <div style={{ borderBottom: "1px solid #000", marginBottom: "8px", height: "0" }}></div>
-              <div style={{ fontWeight: "bold" }}>Irfandi</div>
-              <div>(Penjual)</div>
-            </div>
-            <div style={{ width: "120px" }}>
-              <div style={{ borderBottom: "1px solid #000", marginBottom: "8px", height: "0" }}></div>
-              <div style={{ fontWeight: "bold", minHeight: "20px" }}>{customerName || ""}</div>
-              <div>(Pembeli)</div>
-            </div>
-          </div>
-
         </div>
-      </div>
-    </>
+      )}
+
+      {/* Modal Konfirmasi */}
+      {confirmModal.show && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-pop text-center border border-slate-200">
+            <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Trash2 size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-800 mb-2">Konfirmasi Hapus</h3>
+            <p className="text-sm text-slate-500 mb-8 px-2">{confirmModal.msg}</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => setConfirmModal({show: false, msg: '', onConfirm: () => {}})} className="py-3 rounded-xl font-bold text-sm bg-slate-100 text-slate-600 hover:bg-slate-200 touch-bounce">
+                Batal
+              </button>
+              <button onClick={() => { confirmModal.onConfirm(); setConfirmModal({show: false, msg: '', onConfirm: () => {}}); }} className="py-3 rounded-xl font-bold text-sm bg-rose-600 text-white hover:bg-rose-700 shadow-lg shadow-rose-200 touch-bounce">
+                Ya, Hapus
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

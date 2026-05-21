@@ -63,43 +63,55 @@
   
   /* Cards - Pure visual harmony: firm borders and soft brand-tinted shadows (indigo) */
   .card {
-    @apply bg-white rounded-3xl border border-slate-200 overflow-hidden transition-all duration-300;
+    @apply bg-white rounded-3xl border border-slate-200 overflow-hidden transition-all duration-300 ease-out;
     box-shadow: 
       0 10px 30px -10px rgba(79, 70, 229, 0.06), 
       0 1px 3px rgba(0, 0, 0, 0.01),
       0 0 0 1px rgba(79, 70, 229, 0.01);
   }
+  .card-hover {
+    @apply transition-all duration-300 ease-out active:scale-[0.98] active:shadow-inner;
+  }
   .card-hover:hover {
-    @apply border-brand/30 translate-y-[-4px];
+    @apply border-brand/40 translate-y-[-6px];
     box-shadow: 
-      0 20px 40px -15px rgba(79, 70, 229, 0.12),
+      0 25px 50px -15px rgba(79, 70, 229, 0.2),
       0 1px 5px rgba(79, 70, 229, 0.02),
       0 0 0 1px rgba(79, 70, 229, 0.04);
   }
   
+  /* Touch & Interactive Utilities */
+  .touch-bounce {
+    @apply transition-all duration-300 cubic-bezier(0.34, 1.56, 0.64, 1) hover:-translate-y-1 hover:shadow-lg active:scale-[0.92] active:translate-y-0 active:brightness-90 active:shadow-inner;
+  }
+  
+  .touch-scale {
+    @apply transition-transform duration-200 ease-out active:scale-[0.85];
+  }
+
   /* Buttons — base styles inlined to avoid chained @apply in Tailwind v4 */
   .btn-base {
-    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg active:scale-[0.98] transition-all duration-200;
+    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg touch-bounce;
   }
   .btn-primary {
-    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg active:scale-[0.98] transition-all duration-200 text-white bg-brand shadow-lg hover:bg-brand-dark;
-    box-shadow: 0 4px 24px rgba(59,130,246,0.25);
+    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg text-white bg-brand shadow-lg hover:bg-brand-dark touch-bounce;
+    box-shadow: 0 4px 24px rgba(79,70,229,0.3);
   }
   .btn-success {
-    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg active:scale-[0.98] transition-all duration-200 text-white bg-success hover:bg-emerald-600;
-    box-shadow: 0 4px 24px rgba(16,185,129,0.25);
+    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg text-white bg-success hover:bg-emerald-600 touch-bounce;
+    box-shadow: 0 4px 24px rgba(16,185,129,0.3);
   }
   .btn-wa {
-    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg active:scale-[0.98] transition-all duration-200 text-white;
-    background: #25d366;
-    box-shadow: 0 4px 24px rgba(37,211,102,0.25);
+    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg text-white touch-bounce;
+    background: var(--color-wa);
+    box-shadow: 0 4px 24px rgba(37,211,102,0.3);
   }
   .btn-wa:hover { background: #20bd5a; }
   .btn-secondary {
-    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg active:scale-[0.98] transition-all duration-200 text-slate-700 bg-white border-2 border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-sm;
+    @apply flex items-center justify-center gap-2.5 px-6 py-4 rounded-2xl font-bold text-lg text-slate-700 bg-white border-2 border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-sm touch-bounce;
   }
   .icon-btn {
-    @apply w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-danger hover:bg-danger/10 transition-colors;
+    @apply w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-danger hover:bg-danger/10 transition-colors touch-scale;
   }
 
   /* Table */

@@ -21,8 +21,8 @@ export const viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id" className={jakarta.variable}>
-      <body className="min-h-screen">
+    <html lang="id" className={jakarta.variable} suppressHydrationWarning>
+      <body className="min-h-screen" suppressHydrationWarning>
         <LayoutWrapper>{children}</LayoutWrapper>
       </body>
     </html>

@@ -12,21 +12,23 @@ const config = {
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const [isNative, setIsNative] = useState(false);
+  const [prefix, setPrefix] = useState("");
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
     setIsNative(Capacitor.isNativePlatform());
+    setPrefix(process.env.NODE_ENV === "production" && !Capacitor.isNativePlatform() && window.location.pathname.includes("website-invoice-management") ? "/website-invoice-management" : "");
     setMounted(true);
   }, []);
 
   const navItems = [
     { name: "Beranda", path: "/", icon: Home },
     { name: "Buat Nota", path: "/invoice", icon: Receipt },
+    { name: "Riwayat", path: "/history", icon: () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-history"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg> },
   ];
 
   if (!mounted) return null;
-  const prefix = process.env.NODE_ENV === "production" ? "/website-invoice-management" : "";
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">

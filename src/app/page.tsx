@@ -59,6 +59,11 @@ export default function Dashboard() {
 
   let totalHutang = 0;
   let terbayarBulanIni = 0;
+  let totalOrangBerhutang = 0;
+
+  contacts.forEach(c => {
+    if (getContactHutang(c.id) > 0) totalOrangBerhutang++;
+  });
 
   transactions.forEach((tx) => {
     const txDate = new Date(tx.date);
@@ -184,7 +189,7 @@ export default function Dashboard() {
               <h3 className="font-semibold text-rose-50 tracking-wide text-sm">HUTANG BELUM TERBAYAR</h3>
             </div>
             <div className="text-3xl font-black">{fmtRp(Math.max(0, totalHutang))}</div>
-            <p className="text-sm text-rose-100 mt-2">Total bon aktif di semua pelanggan</p>
+            <p className="text-sm text-rose-100 mt-2">Total bon dari {totalOrangBerhutang} pelanggan</p>
           </div>
 
           <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-3xl p-6 text-white shadow-lg shadow-emerald-200">

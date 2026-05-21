@@ -2,10 +2,13 @@
 import { useState, useEffect, useRef } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { Capacitor } from "@capacitor/core";
+import { Share } from "@capacitor/share";
+import { Filesystem, Directory } from "@capacitor/filesystem";
 import { 
   Plus, Trash2, Download, MessageCircle, RotateCcw, 
   User, Search, Banknote, Tag, Calculator, CheckCircle2, 
-  Settings, Receipt, PenLine, CreditCard, Clock, Layers, Copy, Calendar, X
+  Settings, Receipt, PenLine, CreditCard, Clock, Layers, Copy, Calendar, X, FolderOpen
 } from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────── */
@@ -40,6 +43,7 @@ export default function Home() {
 
   // Form State
   const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
   const [contactId, setContactId] = useState<string | null>(null);
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [bon, setBon] = useState(0);
@@ -49,6 +53,7 @@ export default function Home() {
   const [isSaved, setIsSaved] = useState(false);
   const [contacts, setContacts] = useState<any[]>([]);
   const [showRecommendations, setShowRecommendations] = useState(false);
+  const [savePromptModal, setSavePromptModal] = useState(false);
   
   const [alertModal, setAlertModal] = useState<{show: boolean, msg: string, title?: string, type: 'info' | 'success' | 'error', onClose?: () => void}>({show: false, msg: '', title: '', type: 'info'});
 
@@ -76,6 +81,7 @@ export default function Home() {
           const contact = parsedContacts.find((c: any) => c.id === cid);
           if (contact) {
             setCustomerName(contact.name);
+            setCustomerPhone(contact.phone || "");
             setContactId(cid);
             
             const storedTxs = localStorage.getItem('app_transactions');
@@ -95,6 +101,7 @@ export default function Home() {
 
   const handleSelectContact = (c: any) => {
     setCustomerName(c.name);
+    setCustomerPhone(c.phone || "");
     setContactId(c.id);
     setShowRecommendations(false);
     
@@ -108,20 +115,7 @@ export default function Home() {
     }
   };
 
-  const handleSaveOnly = () => {
-    if (!contactId) {
-      showAlert("Hanya nota yang dibuat dari Folder Pelanggan yang bisa disimpan ke riwayat.", "error", "Peringatan");
-      return;
-    }
-    if (isSaved) {
-      showAlert("Nota ini sudah disimpan sebelumnya.", "info", "Peringatan");
-      return;
-    }
-    if (totalBarang === 0 && cash === 0) {
-      showAlert("Nota kosong, tidak ada barang atau pembayaran yang perlu disimpan.", "error", "Data Kosong");
-      return;
-    }
-    
+  const executeSave = (cid: string) => {
     try {
       const storedTxs = localStorage.getItem('app_transactions');
       const transactions = storedTxs ? JSON.parse(storedTxs) : [];
@@ -138,7 +132,7 @@ export default function Home() {
         // Record 1 consolidated entry for the invoice to prevent double history
         updated.push({
           id: Date.now().toString() + "-inv",
-          contactId,
+          contactId: cid,
           date: txDate,
           type: 'bon',
           amount: totalBarang,
@@ -150,7 +144,7 @@ export default function Home() {
         // If they only pay debt without buying any goods
         updated.push({
           id: Date.now().toString() + "-p",
-          contactId,
+          contactId: cid,
           date: txDate,
           type: 'payment',
           amount: effectivePayment,
@@ -160,11 +154,48 @@ export default function Home() {
 
       localStorage.setItem('app_transactions', JSON.stringify(updated));
       setIsSaved(true);
-      showAlert("Data berhasil disimpan ke folder pelanggan!", "success", "Berhasil");
+      showAlert(cid === "general" ? "Data berhasil disimpan ke riwayat tanpa folder." : "Data berhasil disimpan ke folder pelanggan!", "success", "Berhasil");
     } catch(e) {
       console.error(e);
       showAlert("Gagal menyimpan data karena masalah penyimpanan lokal.", "error", "Terjadi Kesalahan");
     }
+  };
+
+  const handleCreateAndSelectFolder = (andSave: boolean = false) => {
+    const nameToUse = customerName.trim() || "Pelanggan Baru";
+    const newId = Date.now().toString();
+    const newContact = { id: newId, name: nameToUse, address: "", phone: customerPhone };
+    const updatedContacts = [...contacts, newContact];
+    setContacts(updatedContacts);
+    localStorage.setItem('app_contacts', JSON.stringify(updatedContacts));
+    
+    setContactId(newId);
+    setShowRecommendations(false);
+    
+    if (andSave) {
+      executeSave(newId);
+      setSavePromptModal(false);
+    } else {
+      showAlert(`Folder pelanggan "${nameToUse}" berhasil dibuat!`, "success", "Berhasil");
+    }
+  };
+
+  const handleSaveOnly = () => {
+    if (isSaved) {
+      showAlert("Nota ini sudah disimpan sebelumnya.", "info", "Peringatan");
+      return;
+    }
+    if (totalBarang === 0 && cash === 0) {
+      showAlert("Nota kosong, tidak ada barang atau pembayaran yang perlu disimpan.", "error", "Data Kosong");
+      return;
+    }
+    
+    if (!contactId) {
+      setSavePromptModal(true);
+      return;
+    }
+
+    executeSave(contactId);
   };
 
   /* ─── Derived Math ─── */
@@ -216,6 +247,7 @@ export default function Home() {
     
     if (!contactId) {
       setCustomerName(""); 
+      setCustomerPhone("");
       setBon(0);
     } else {
       const storedTxs = localStorage.getItem('app_transactions');
@@ -270,6 +302,30 @@ export default function Home() {
     try {
       const canvas = await html2canvas(printRef.current, { scale: 3, useCORS: true, backgroundColor: "#ffffff" });
       
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const base64Image = canvas.toDataURL("image/png");
+          const fileName = `Nota-${customerName || "Customer"}-${Date.now()}.png`;
+          const savedFile = await Filesystem.writeFile({
+            path: fileName,
+            data: base64Image.split(',')[1],
+            directory: Directory.Cache
+          });
+
+          await Share.share({
+            title: "Nota Belanja Fendi Broiler",
+            text: "Berikut adalah nota belanja Anda.",
+            url: savedFile.uri,
+            dialogTitle: "Kirim via WhatsApp"
+          });
+          return;
+        } catch (err) {
+          console.error("Capacitor Share error:", err);
+          showAlert("Gagal membagikan nota secara native.", "error", "Terjadi Kesalahan");
+          return;
+        }
+      }
+
       canvas.toBlob(async (blob) => {
         if (!blob) {
           showAlert("Gagal memproses gambar nota.", "error", "Terjadi Kesalahan");
@@ -298,11 +354,14 @@ export default function Home() {
           const item = new ClipboardItem({ "image/png": blob });
           await navigator.clipboard.write([item]);
           
+          const phoneStr = customerPhone ? customerPhone.replace(/^0/, '62') : "";
+          const waUrl = phoneStr ? `https://wa.me/${phoneStr}` : "https://wa.me/";
+
           showAlert(
             "Gambar Nota telah otomatis disALIN ke Clipboard!\n\nAnda akan dialihkan ke WhatsApp. Di ruang obrolan, silakan langsung tekan Ctrl+V (atau Klik Kanan -> Tempel/Paste) untuk mengirim nota.",
             "success",
             "Berhasil Disalin",
-            () => window.open("https://wa.me/", "_blank")
+            () => window.open(waUrl, "_blank")
           );
         } catch (clipboardErr) {
           console.error("Clipboard copy failed", clipboardErr);
@@ -364,7 +423,7 @@ export default function Home() {
                     />
                     {contactId && (
                       <button 
-                        onClick={() => { setContactId(null); setCustomerName(""); setBon(0); setIsSaved(false); }}
+                        onClick={() => { setContactId(null); setCustomerName(""); setCustomerPhone(""); setBon(0); setIsSaved(false); }}
                         className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors z-10"
                         title="Hapus / Ganti Pelanggan"
                       >
@@ -390,7 +449,15 @@ export default function Home() {
                           </div>
                         ))
                       ) : (
-                        <div className="px-4 py-3 text-sm text-slate-400 italic">Tidak ada folder pelanggan. <br/>Ketik nama baru untuk nota tanpa folder.</div>
+                        <div className="px-4 py-3 text-sm text-slate-500 bg-slate-50 border-t border-slate-100">
+                          <p className="mb-2 italic text-slate-400">Belum ada folder pelanggan.</p>
+                          <button 
+                            onMouseDown={(e) => { e.preventDefault(); handleCreateAndSelectFolder(); }}
+                            className="w-full py-2 bg-indigo-100 text-indigo-700 font-bold rounded-lg hover:bg-indigo-200 transition-colors flex items-center justify-center gap-1.5"
+                          >
+                            <Plus size={16} /> Bikin Folder "{customerName || 'Baru'}"
+                          </button>
+                        </div>
                       )}
                     </div>
                   )}
@@ -746,6 +813,30 @@ export default function Home() {
             >
               Mengerti
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Save Prompt (Tanpa Folder) */}
+      {savePromptModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-pop text-center border border-slate-200">
+            <div className="w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FolderOpen size={32} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-800 mb-2">Belum Ada Folder</h3>
+            <p className="text-sm text-slate-500 mb-6 px-2">Anda belum memilih folder pelanggan. Ingin membuat folder baru atau simpan tanpa folder ke riwayat?</p>
+            <div className="flex flex-col gap-3">
+              <button onClick={() => handleCreateAndSelectFolder(true)} className="py-3 rounded-xl font-bold text-sm bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200 touch-bounce">
+                Bikin Folder Baru & Simpan
+              </button>
+              <button onClick={() => { executeSave("general"); setSavePromptModal(false); }} className="py-3 rounded-xl font-bold text-sm bg-emerald-100 text-emerald-700 hover:bg-emerald-200 touch-bounce">
+                Simpan Tanpa Folder
+              </button>
+              <button onClick={() => setSavePromptModal(false)} className="py-3 rounded-xl font-bold text-sm bg-slate-100 text-slate-600 hover:bg-slate-200 touch-bounce mt-2">
+                Batal
+              </button>
+            </div>
           </div>
         </div>
       )}

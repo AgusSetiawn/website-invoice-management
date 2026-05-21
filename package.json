@@ -27,6 +27,7 @@
     "sharp": "^0.34.5"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.3.4",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",

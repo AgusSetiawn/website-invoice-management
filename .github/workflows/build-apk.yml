@@ -39,7 +39,6 @@ jobs:
 
       - name: Generate Capacitor Assets & Splash Screen
         run: |
-          npm install @capacitor/assets @capacitor/splash-screen
           mkdir -p assets
           cp public/logo.png assets/icon.png
           cp public/logo.png assets/splash.png
